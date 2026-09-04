@@ -1,0 +1,228 @@
+import { performance } from "node:perf_hooks";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
+import type { FastTarget, Measurement, ProgressHandler } from "./types.js";
+
+const MIN_DURATION_MS = 5_000;
+const MAX_DURATION_MS = 30_000;
+const MAX_CONNECTIONS = 8;
+const INITIAL_CONNECTIONS = 2;
+const PROGRESS_INTERVAL_MS = 250;
+const STABILITY_WINDOW = 6;
+const STABILITY_DELTA_MBPS = 2;
+// Keep individual uploads small enough for OCA servers and slow connections;
+// workers immediately start another chunk after completion.
+const UPLOAD_CHUNK_BYTES = 256 * 1024;
+
+export interface MeasureOptions {
+  minDurationMs?: number;
+  maxDurationMs?: number;
+  fetchImpl?: typeof fetch;
+  requestImpl?: typeof fetch;
+  onProgress?: ProgressHandler;
+  signal?: AbortSignal;
+}
+
+export async function measureDownload(targets: FastTarget[], options: MeasureOptions = {}): Promise<Measurement> {
+  return measurePhase("download", targets, options);
+}
+
+export async function measureUpload(targets: FastTarget[], options: MeasureOptions = {}): Promise<Measurement> {
+  return measurePhase("upload", targets, options);
+}
+
+async function measurePhase(
+  phase: "download" | "upload",
+  targets: FastTarget[],
+  options: MeasureOptions,
+): Promise<Measurement> {
+  if (targets.length === 0) {
+    throw new Error("No hay servidores disponibles para medir la velocidad");
+  }
+
+  const minDurationMs = options.minDurationMs ?? MIN_DURATION_MS;
+  const maxDurationMs = options.maxDurationMs ?? MAX_DURATION_MS;
+  if (minDurationMs <= 0 || maxDurationMs < minDurationMs) {
+    throw new Error("Duración de prueba inválida");
+  }
+
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const start = performance.now();
+  const controller = new AbortController();
+  const relayAbort = () => controller.abort(options.signal?.reason);
+  options.signal?.addEventListener("abort", relayAbort, { once: true });
+  let totalBytes = 0;
+  let lastProgress = start;
+  let stopped = false;
+  const samples: number[] = [];
+
+  const stop = () => {
+    stopped = true;
+    controller.abort();
+  };
+
+  const workers = Array.from({ length: INITIAL_CONNECTIONS }, (_, index) =>
+    runWorker(index, phase, targets, fetchImpl, controller.signal, () => stopped, (bytes) => {
+      totalBytes += bytes;
+    }),
+  );
+
+  const interval = setInterval(() => {
+    const elapsedMs = performance.now() - start;
+    const mbps = speedMbps(totalBytes, elapsedMs);
+    if (mbps > 0) {
+      samples.push(mbps);
+      if (samples.length > STABILITY_WINDOW) {
+        samples.shift();
+      }
+    }
+    if (options.onProgress && elapsedMs - (lastProgress - start) >= PROGRESS_INTERVAL_MS) {
+      lastProgress = performance.now();
+      options.onProgress({ phase, mbps, elapsedMs, bytes: totalBytes });
+    }
+    if (elapsedMs >= minDurationMs && isStable(samples)) {
+      stop();
+    }
+    if (elapsedMs >= maxDurationMs) {
+      stop();
+    }
+  }, PROGRESS_INTERVAL_MS);
+
+  try {
+    await Promise.all(workers);
+  } finally {
+    clearInterval(interval);
+    options.signal?.removeEventListener("abort", relayAbort);
+  }
+
+  if (options.signal?.aborted) {
+    throw options.signal.reason instanceof Error ? options.signal.reason : new Error("Prueba cancelada");
+  }
+
+  const elapsedMs = performance.now() - start;
+  if (totalBytes === 0) {
+    throw new Error(`No se pudieron transferir datos durante la prueba de ${phase}`);
+  }
+  return { bytes: totalBytes, elapsedMs, mbps: speedMbps(totalBytes, elapsedMs) };
+}
+
+async function runWorker(
+  workerIndex: number,
+  phase: "download" | "upload",
+  targets: FastTarget[],
+  fetchImpl: typeof fetch,
+  signal: AbortSignal,
+  isStopped: () => boolean,
+  addBytes: (bytes: number) => void,
+): Promise<void> {
+  let requestIndex = workerIndex;
+  while (!isStopped() && !signal.aborted) {
+    const target = targets[requestIndex % targets.length];
+    requestIndex += MAX_CONNECTIONS;
+    try {
+      if (phase === "download") {
+        await downloadRequest(target.url, fetchImpl, signal, addBytes);
+      } else {
+        await uploadRequest(target.url, signal, addBytes);
+      }
+    } catch (error) {
+      if (signal.aborted || isAbortError(error)) {
+        return;
+      }
+      // A single failed connection should not end the complete test. Other
+      // workers may still be able to use the selected Netflix server.
+      await Promise.resolve();
+    }
+  }
+}
+
+async function downloadRequest(
+  url: string,
+  fetchImpl: typeof fetch,
+  signal: AbortSignal,
+  addBytes: (bytes: number) => void,
+): Promise<void> {
+  const requestUrl = new URL(url);
+  // The target's `t` parameter is part of the signed OCA URL. Use a separate
+  // cache-buster so we do not invalidate the URL returned by fast.com.
+  requestUrl.searchParams.set("x", String(Date.now()));
+  const response = await fetchImpl(requestUrl, { signal, cache: "no-store" });
+  if (!response.ok || !response.body) {
+    throw new Error(`Descarga HTTP ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  try {
+    while (!signal.aborted) {
+      const chunk = await reader.read();
+      if (chunk.done) {
+        break;
+      }
+      addBytes(chunk.value.byteLength);
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+}
+
+async function uploadRequest(
+  url: string,
+  signal: AbortSignal,
+  addBytes: (bytes: number) => void,
+): Promise<void> {
+  const payload = Buffer.alloc(UPLOAD_CHUNK_BYTES);
+  const parsed = new URL(url);
+  const requestImpl = parsed.protocol === "https:" ? httpsRequest : httpRequest;
+
+  await new Promise<void>((resolve, reject) => {
+    const request = requestImpl({
+      hostname: parsed.hostname,
+      port: parsed.port || undefined,
+      path: `${parsed.pathname}${parsed.search}`,
+      method: "POST",
+      headers: {
+        "content-type": "application/octet-stream",
+        "content-length": payload.byteLength,
+        "user-agent": "fast-test-cli/1.0",
+        accept: "*/*",
+        connection: "close",
+      },
+      signal,
+    }, (response) => {
+      response.resume();
+      response.once("end", () => {
+        if (response.statusCode && (response.statusCode < 200 || response.statusCode >= 300) && response.statusCode !== 304) {
+          reject(new Error(`Subida HTTP ${response.statusCode}`));
+          return;
+        }
+        addBytes(payload.byteLength);
+        resolve();
+      });
+    });
+    request.setTimeout(15_000, () => request.destroy(new Error("Tiempo de espera agotado durante la subida")));
+    request.once("error", reject);
+    request.end(payload);
+  });
+}
+
+function speedMbps(bytes: number, elapsedMs: number): number {
+  if (bytes <= 0 || elapsedMs <= 0) {
+    return 0;
+  }
+  return (bytes * 8) / (elapsedMs / 1_000) / 1_000_000;
+}
+
+function isStable(samples: number[]): boolean {
+  if (samples.length < STABILITY_WINDOW) {
+    return false;
+  }
+  const min = Math.min(...samples);
+  const max = Math.max(...samples);
+  return max - min <= STABILITY_DELTA_MBPS;
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+export { speedMbps, isStable };
