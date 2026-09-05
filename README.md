@@ -1,4 +1,4 @@
-# fast-test-cli
+# fast-cli
 
 Test your internet speed from the terminal using Netflix servers, similar to fast.com.
 
