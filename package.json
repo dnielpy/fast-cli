@@ -1,6 +1,6 @@
 {
   "name": "fast-test-cli",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Internet speed test powered by fast.com and Netflix Open Connect servers",
   "type": "module",
   "bin": {
