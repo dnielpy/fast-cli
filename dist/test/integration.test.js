@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { measureDownload, measureUpload } from "../src/measure.js";
+import { measureDownload, measureLatency, measureUpload } from "../src/measure.js";
 describe("HTTP speed measurement", () => {
     it("measures download and upload against a local HTTP server", async () => {
         const payload = Buffer.alloc(128 * 1024, 7);
@@ -26,10 +26,12 @@ describe("HTTP speed measurement", () => {
         try {
             const download = await measureDownload(targets, { minDurationMs: 300, maxDurationMs: 1_000 });
             const upload = await measureUpload(targets, { minDurationMs: 300, maxDurationMs: 1_000 });
+            const ping = await measureLatency(targets);
             assert.ok(download.bytes > 0);
             assert.ok(download.mbps > 0);
             assert.ok(upload.bytes > 0);
             assert.ok(upload.mbps > 0);
+            assert.ok(ping !== null && ping >= 0);
         }
         finally {
             await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

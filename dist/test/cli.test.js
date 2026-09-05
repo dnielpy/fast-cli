@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { helpText, parseArgs } from "../src/cli.js";
-import { formatJson, formatProgress } from "../src/format.js";
+import { formatCenteredProgress, formatCenteredResult, formatJson, formatProgress } from "../src/format.js";
 describe("CLI", () => {
     it("uses download and upload by default", () => {
         assert.deepEqual(parseArgs([]), {
@@ -26,9 +26,33 @@ describe("CLI", () => {
     });
     it("formats progress and JSON output", () => {
         assert.match(formatProgress({ phase: "download", mbps: 87.4, elapsedMs: 1200, bytes: 1 }), /87\.4 Mbps/);
+        assert.match(formatCenteredProgress({ phase: "download", mbps: 87.4, elapsedMs: 1200, bytes: 1 }, 80, 24), /DESCARGA/);
+        assert.match(formatCenteredProgress({ phase: "download", mbps: 87.4, elapsedMs: 1200, bytes: 1 }, 80, 24), /Tiempo: 1\.2s/);
+        assert.match(formatCenteredProgress({ phase: "download", mbps: 87.4, elapsedMs: 1200, bytes: 1 }, 80, 24), /█/);
+        assert.match(formatCenteredResult({
+            downloadMbps: 87.4,
+            uploadMbps: 18.2,
+            pingMs: 24.5,
+            durationMs: 6000,
+            server: null,
+            serverLocation: null,
+            clientIp: null,
+            clientLocation: null,
+        }, 80, 24), /RESULTADO FINAL/);
+        assert.match(formatCenteredResult({
+            downloadMbps: 87.4,
+            uploadMbps: 18.2,
+            pingMs: 24.5,
+            durationMs: 6000,
+            server: null,
+            serverLocation: null,
+            clientIp: null,
+            clientLocation: null,
+        }, 80, 24), /Ping:.*24\.5 ms/);
         assert.match(formatJson({
             downloadMbps: 87.4,
             uploadMbps: 18.2,
+            pingMs: 24.5,
             durationMs: 6000,
             server: "Miami",
             serverLocation: "Miami, US",

@@ -1,7 +1,7 @@
 import { performance } from "node:perf_hooks";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-const MIN_DURATION_MS = 5_000;
+const MIN_DURATION_MS = 10_000;
 const MAX_DURATION_MS = 30_000;
 const MAX_CONNECTIONS = 8;
 const INITIAL_CONNECTIONS = 2;
@@ -11,11 +11,67 @@ const STABILITY_DELTA_MBPS = 2;
 // Keep individual uploads small enough for OCA servers and slow connections;
 // workers immediately start another chunk after completion.
 const UPLOAD_CHUNK_BYTES = 256 * 1024;
+const LATENCY_ATTEMPTS = 3;
+const LATENCY_TIMEOUT_MS = 3_000;
 export async function measureDownload(targets, options = {}) {
     return measurePhase("download", targets, options);
 }
 export async function measureUpload(targets, options = {}) {
     return measurePhase("upload", targets, options);
+}
+export async function measureLatency(targets, options = {}) {
+    if (targets.length === 0) {
+        return null;
+    }
+    const requests = Array.from({ length: LATENCY_ATTEMPTS }, (_, attempt) => {
+        const target = targets[attempt % targets.length];
+        const requestUrl = new URL(rangeTargetUrl(target.url, true));
+        return pingRequest(requestUrl.toString(), options.signal);
+    });
+    const results = await Promise.allSettled(requests);
+    if (options.signal?.aborted) {
+        throw options.signal.reason instanceof Error ? options.signal.reason : new Error("Prueba cancelada");
+    }
+    const samples = results
+        .filter((result) => result.status === "fulfilled")
+        .map((result) => result.value);
+    if (samples.length === 0) {
+        return null;
+    }
+    samples.sort((a, b) => a - b);
+    return Math.round(samples[Math.floor(samples.length / 2)] * 10) / 10;
+}
+async function pingRequest(url, signal) {
+    const parsed = new URL(url);
+    const requestImpl = parsed.protocol === "https:" ? httpsRequest : httpRequest;
+    const startedAt = performance.now();
+    return new Promise((resolve, reject) => {
+        const request = requestImpl({
+            hostname: parsed.hostname,
+            port: parsed.port || undefined,
+            path: `${parsed.pathname}${parsed.search}`,
+            method: "POST",
+            headers: {
+                "content-length": 0,
+                "user-agent": "fast-test-cli/1.0",
+                accept: "*/*",
+                connection: "close",
+            },
+            signal,
+        }, (response) => {
+            response.resume();
+            response.once("end", () => {
+                if (response.statusCode && (response.statusCode < 200 || response.statusCode >= 300) && response.statusCode !== 304) {
+                    reject(new Error(`Ping HTTP ${response.statusCode}`));
+                    return;
+                }
+                resolve(performance.now() - startedAt);
+            });
+        });
+        request.setTimeout(LATENCY_TIMEOUT_MS, () => request.destroy(new Error("Tiempo de espera agotado durante el ping")));
+        request.once("error", reject);
+        request.end();
+    });
 }
 async function measurePhase(phase, targets, options) {
     if (targets.length === 0) {
@@ -102,10 +158,7 @@ async function runWorker(workerIndex, phase, targets, fetchImpl, signal, isStopp
     }
 }
 async function downloadRequest(url, fetchImpl, signal, addBytes) {
-    const requestUrl = new URL(url);
-    // The target's `t` parameter is part of the signed OCA URL. Use a separate
-    // cache-buster so we do not invalidate the URL returned by fast.com.
-    requestUrl.searchParams.set("x", String(Date.now()));
+    const requestUrl = new URL(streamTargetUrl(url));
     const response = await fetchImpl(requestUrl, { signal, cache: "no-store" });
     if (!response.ok || !response.body) {
         throw new Error(`Descarga HTTP ${response.status}`);
@@ -126,7 +179,7 @@ async function downloadRequest(url, fetchImpl, signal, addBytes) {
 }
 async function uploadRequest(url, signal, addBytes) {
     const payload = Buffer.alloc(UPLOAD_CHUNK_BYTES);
-    const parsed = new URL(url);
+    const parsed = new URL(streamTargetUrl(url));
     const requestImpl = parsed.protocol === "https:" ? httpsRequest : httpRequest;
     await new Promise((resolve, reject) => {
         const request = requestImpl({
@@ -174,6 +227,22 @@ function isStable(samples) {
 }
 function isAbortError(error) {
     return error instanceof DOMException && error.name === "AbortError";
+}
+function rangeTargetUrl(url, zeroByteRange = false) {
+    const target = new URL(url);
+    if (target.pathname.endsWith("/speedtest")) {
+        target.pathname += "/range/";
+    }
+    else if (target.pathname.endsWith("/speedtest/")) {
+        target.pathname += "range/";
+    }
+    if (zeroByteRange && target.pathname.endsWith("/range/")) {
+        target.pathname += "0-0";
+    }
+    return target.toString();
+}
+function streamTargetUrl(url) {
+    return url;
 }
 export { speedMbps, isStable };
 //# sourceMappingURL=measure.js.map

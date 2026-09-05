@@ -28,6 +28,7 @@ export interface Measurement {
 export interface SpeedTestResult {
   downloadMbps: number;
   uploadMbps: number | null;
+  pingMs: number | null;
   durationMs: number;
   server: string | null;
   serverLocation: string | null;

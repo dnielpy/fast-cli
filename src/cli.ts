@@ -2,7 +2,7 @@
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { realpathSync } from "node:fs";
-import { formatJson, formatProgress, formatResult } from "./format.js";
+import { formatCenteredProgress, formatJson, formatResult } from "./format.js";
 import { runSpeedTest } from "./speed-test.js";
 import type { ProgressUpdate, TestOptions } from "./types.js";
 
@@ -88,14 +88,19 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
 
   try {
     if (interactive) {
-      console.log("Conectando con fast.com...\n");
+      process.stdout.write("\x1b[2J\x1b[H");
+      process.stdout.write(centerText("Conectando con fast.com...", process.stdout.columns ?? 80, process.stdout.rows ?? 24));
     }
     const result = await runSpeedTest(options, interactive ? renderProgress : undefined, controller.signal);
     if (options.json) {
       console.log(formatJson(result));
     } else {
-      if (interactive) process.stdout.write("\x1b[2K\r");
-      console.log(formatResult(result, options.verbose));
+      if (interactive) {
+        process.stdout.write("\x1b[2J\x1b[H");
+        console.log(formatResult(result, options.verbose));
+      } else {
+        console.log(formatResult(result, options.verbose));
+      }
     }
   } catch (error) {
     printError(error);
@@ -106,7 +111,13 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
 }
 
 function renderProgress(update: ProgressUpdate): void {
-  process.stdout.write(`\x1b[2K\r${formatProgress(update)}`);
+  process.stdout.write(`\x1b[2J\x1b[H${formatCenteredProgress(update, process.stdout.columns ?? 80, process.stdout.rows ?? 24)}`);
+}
+
+function centerText(text: string, columns: number, rows: number): string {
+  const topPadding = Math.max(0, Math.floor((rows - 1) / 2));
+  const leftPadding = Math.max(0, Math.floor((columns - text.length) / 2));
+  return `${"\n".repeat(topPadding)}${" ".repeat(leftPadding)}${text}\n`;
 }
 
 function printError(error: unknown): void {

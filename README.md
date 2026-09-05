@@ -19,7 +19,8 @@ npm install -g fast-test-cli
 fast
 ```
 
-Por defecto mide descarga y subida y actualiza la velocidad en la misma línea de la terminal.
+Por defecto mide ping, descarga y subida y actualiza la velocidad en la misma línea de la terminal.
+Cada fase dura al menos 10 segundos y puede extenderse hasta 30 segundos para estabilizar el resultado.
 
 ```bash
 fast --download-only
