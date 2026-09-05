@@ -73,4 +73,3 @@ export function formatLocation(location) {
     const value = [location.city, location.country].filter(Boolean).join(", ");
     return value || null;
 }
-//# sourceMappingURL=fast-api.js.map

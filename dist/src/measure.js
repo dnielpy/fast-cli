@@ -8,8 +8,6 @@ const INITIAL_CONNECTIONS = 2;
 const PROGRESS_INTERVAL_MS = 250;
 const STABILITY_WINDOW = 6;
 const STABILITY_DELTA_MBPS = 2;
-// Keep individual uploads small enough for OCA servers and slow connections;
-// workers immediately start another chunk after completion.
 const UPLOAD_CHUNK_BYTES = 256 * 1024;
 const LATENCY_ATTEMPTS = 3;
 const LATENCY_TIMEOUT_MS = 3_000;
@@ -151,8 +149,6 @@ async function runWorker(workerIndex, phase, targets, fetchImpl, signal, isStopp
             if (signal.aborted || isAbortError(error)) {
                 return;
             }
-            // A single failed connection should not end the complete test. Other
-            // workers may still be able to use the selected Netflix server.
             await Promise.resolve();
         }
     }
@@ -245,4 +241,3 @@ function streamTargetUrl(url) {
     return url;
 }
 export { speedMbps, isStable };
-//# sourceMappingURL=measure.js.map

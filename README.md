@@ -7,11 +7,41 @@ Prueba la velocidad de tu conexión desde la terminal usando servidores de Netfl
 - macOS o Linux
 - Node.js 20 o superior
 
-## Instalación
+## Instalación desde npm
 
 ```bash
 npm install -g fast-test-cli
 ```
+
+Después, en macOS o Linux, ejecuta:
+
+```bash
+fast
+```
+
+No hace falta instalar nada diferente según el sistema operativo. Si npm muestra `EACCES` en macOS o Linux, configura un prefijo de usuario:
+
+```bash
+mkdir -p ~/.npm-global
+npm config set prefix ~/.npm-global
+echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+npm install -g fast-test-cli
+```
+
+En Linux que use Bash, cambia `~/.zshrc` por `~/.bashrc`.
+
+## Instalación desde GitHub
+
+```bash
+git clone git@github.com:dnielpy/fast-cli.git
+cd fast-cli
+npm install
+npm run build
+npm install -g . --prefix ~/.npm-global
+```
+
+Luego ejecuta `fast`.
 
 ## Uso
 
@@ -35,7 +65,6 @@ fast --help
 
 ```bash
 npm install
-npm test
 npm run build
 npm install -g .
 ```

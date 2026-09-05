@@ -93,4 +93,3 @@ function centerLine(line, columns) {
     const padding = Math.max(0, Math.floor((columns - line.length) / 2));
     return `${" ".repeat(padding)}${line}`;
 }
-//# sourceMappingURL=format.js.map

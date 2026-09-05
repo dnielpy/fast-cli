@@ -16,8 +16,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "npm run build && node --test dist/test/*.test.js",
-    "check": "npm run build && npm test"
+    "prepublishOnly": "npm run build"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -116,4 +116,3 @@ function printError(error) {
 if (process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(resolve(process.argv[1]))) {
     await main();
 }
-//# sourceMappingURL=cli.js.map

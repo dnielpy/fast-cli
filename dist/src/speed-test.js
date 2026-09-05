@@ -30,4 +30,3 @@ export async function runSpeedTest(options, onProgress, signal) {
 function roundMbps(value) {
     return Math.round(value * 10) / 10;
 }
-//# sourceMappingURL=speed-test.js.map
