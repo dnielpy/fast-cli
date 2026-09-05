@@ -13,14 +13,14 @@ const BIG_DIGITS = {
 };
 export function formatProgress(update) {
     const label = update.phase === "download" ? "Descarga" : "Subida  ";
-    return `${label}: ${formatSpeed(update.mbps).padStart(13)}  (${formatSeconds(update.elapsedMs)})`;
+    return `${label}: ${formatMbps(update.mbps).padStart(8)} Mbps  (${formatSeconds(update.elapsedMs)})`;
 }
 export function formatResult(result, verbose = false) {
     const lines = [
-        `✓ Descarga: ${formatSpeed(result.downloadMbps).padStart(13)}`,
+        `✓ Descarga: ${formatMbps(result.downloadMbps).padStart(8)} Mbps`,
         result.uploadMbps === null
             ? ""
-            : `✓ Subida:   ${formatSpeed(result.uploadMbps).padStart(13)}`,
+            : `✓ Subida:   ${formatMbps(result.uploadMbps).padStart(8)} Mbps`,
         result.pingMs === null ? "" : `✓ Ping:     ${formatPing(result.pingMs)}`,
     ].filter(Boolean);
     if (verbose) {
@@ -49,8 +49,8 @@ export function formatCenteredResult(result, columns = 80, rows = 24, verbose = 
     const content = [
         "RESULTADO FINAL",
         "",
-        `Descarga: ${formatSpeed(result.downloadMbps)}`,
-        result.uploadMbps === null ? "" : `Subida:   ${formatSpeed(result.uploadMbps)}`,
+        `Descarga: ${formatMbps(result.downloadMbps)} Mbps`,
+        result.uploadMbps === null ? "" : `Subida:   ${formatMbps(result.uploadMbps)} Mbps`,
         result.pingMs === null ? "" : `Ping:     ${formatPing(result.pingMs)}`,
     ];
     if (verbose) {
@@ -68,10 +68,8 @@ export function formatCenteredResult(result, columns = 80, rows = 24, verbose = 
 export function formatJson(result) {
     return JSON.stringify(result, null, 2);
 }
-function formatSpeed(value) {
-    if (!Number.isFinite(value) || value <= 0)
-        return "0.0 Mbps";
-    return value < 1 ? `${(value * 1_000).toFixed(0)} Kbps` : `${value.toFixed(1)} Mbps`;
+function formatMbps(value) {
+    return Number.isFinite(value) ? value.toFixed(1) : "0.0";
 }
 function formatSeconds(milliseconds) {
     return `${(milliseconds / 1_000).toFixed(1)}s`;
@@ -80,12 +78,8 @@ function formatPing(milliseconds) {
     return `${milliseconds.toFixed(1)} ms`;
 }
 function bigNumberLines(value) {
-    const [number, unit] = formatSpeed(value).split(" ");
-    const digits = number.split("").map((digit) => BIG_DIGITS[digit] ?? BIG_DIGITS["0"]);
-    return Array.from({ length: 9 }, (_, row) => {
-        const line = digits.map((digit) => digit[row]).join(" ");
-        return row === 8 ? `${line} ${unit}` : `${line}${" ".repeat(unit.length + 1)}`;
-    });
+    const digits = formatMbps(value).split("").map((digit) => BIG_DIGITS[digit] ?? BIG_DIGITS["0"]);
+    return Array.from({ length: 9 }, (_, row) => digits.map((digit) => digit[row]).join(" "));
 }
 function centerBlock(lines, columns, rows) {
     const verticalPadding = Math.max(0, Math.floor((rows - lines.length) / 2));

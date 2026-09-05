@@ -16,15 +16,15 @@ const BIG_DIGITS: Record<string, string[]> = {
 
 export function formatProgress(update: ProgressUpdate): string {
   const label = update.phase === "download" ? "Descarga" : "Subida  ";
-  return `${label}: ${formatSpeed(update.mbps).padStart(13)}  (${formatSeconds(update.elapsedMs)})`;
+  return `${label}: ${formatMbps(update.mbps).padStart(8)} Mbps  (${formatSeconds(update.elapsedMs)})`;
 }
 
 export function formatResult(result: SpeedTestResult, verbose = false): string {
   const lines = [
-    `✓ Descarga: ${formatSpeed(result.downloadMbps).padStart(13)}`,
+    `✓ Descarga: ${formatMbps(result.downloadMbps).padStart(8)} Mbps`,
     result.uploadMbps === null
       ? ""
-      : `✓ Subida:   ${formatSpeed(result.uploadMbps).padStart(13)}`,
+      : `✓ Subida:   ${formatMbps(result.uploadMbps).padStart(8)} Mbps`,
     result.pingMs === null ? "" : `✓ Ping:     ${formatPing(result.pingMs)}`,
   ].filter(Boolean);
 
@@ -53,8 +53,8 @@ export function formatCenteredResult(result: SpeedTestResult, columns = 80, rows
   const content = [
     "RESULTADO FINAL",
     "",
-    `Descarga: ${formatSpeed(result.downloadMbps)}`,
-    result.uploadMbps === null ? "" : `Subida:   ${formatSpeed(result.uploadMbps)}`,
+    `Descarga: ${formatMbps(result.downloadMbps)} Mbps`,
+    result.uploadMbps === null ? "" : `Subida:   ${formatMbps(result.uploadMbps)} Mbps`,
     result.pingMs === null ? "" : `Ping:     ${formatPing(result.pingMs)}`,
   ];
 
@@ -72,9 +72,8 @@ export function formatJson(result: SpeedTestResult): string {
   return JSON.stringify(result, null, 2);
 }
 
-function formatSpeed(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return "0.0 Mbps";
-  return value < 1 ? `${(value * 1_000).toFixed(0)} Kbps` : `${value.toFixed(1)} Mbps`;
+function formatMbps(value: number): string {
+  return Number.isFinite(value) ? value.toFixed(1) : "0.0";
 }
 
 function formatSeconds(milliseconds: number): string {
@@ -86,12 +85,8 @@ function formatPing(milliseconds: number): string {
 }
 
 function bigNumberLines(value: number): string[] {
-  const [number, unit] = formatSpeed(value).split(" ");
-  const digits = number.split("").map((digit) => BIG_DIGITS[digit] ?? BIG_DIGITS["0"]);
-  return Array.from({ length: 9 }, (_, row) => {
-    const line = digits.map((digit) => digit[row]).join(" ");
-    return row === 8 ? `${line} ${unit}` : `${line}${" ".repeat(unit.length + 1)}`;
-  });
+  const digits = formatMbps(value).split("").map((digit) => BIG_DIGITS[digit] ?? BIG_DIGITS["0"]);
+  return Array.from({ length: 9 }, (_, row) => digits.map((digit) => digit[row]).join(" "));
 }
 
 function centerBlock(lines: string[], columns: number, rows: number): string {
